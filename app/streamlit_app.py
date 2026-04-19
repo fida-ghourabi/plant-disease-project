@@ -10,6 +10,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# UI theme and layout styling.
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
@@ -464,6 +465,7 @@ with left:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
     st.markdown('<div class="panel-title">Image Input</div>', unsafe_allow_html=True)
 
+    # Image uploader for inference.
     uploaded = st.file_uploader(
         "Drop a leaf image here",
         type=["jpg", "jpeg", "png"],
@@ -471,6 +473,7 @@ with left:
     )
 
     if uploaded:
+        # Load and preview the uploaded image with basic metadata.
         img = Image.open(uploaded).convert("RGB")
         w, h = img.size
         st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
@@ -489,6 +492,7 @@ with left:
         </div>
         """, unsafe_allow_html=True)
     else:
+        # Empty-state panel for the upload area.
         st.markdown("""
         <div style='height:14px'></div>
         <div class='upload-hint'>
@@ -505,6 +509,7 @@ with right:
     st.markdown('<div class="panel-title">Diagnosis</div>', unsafe_allow_html=True)
 
     if not uploaded:
+        # Empty-state panel for the diagnosis area.
         st.markdown("""
         <div class="result-empty">
             <div class="result-empty-icon">🔬</div>
@@ -512,8 +517,10 @@ with right:
         </div>
         """, unsafe_allow_html=True)
     else:
+        # Send the image to the API and render the prediction.
         with st.spinner("Analyzing leaf..."):
             try:
+            # Build a multipart payload compatible with FastAPI.
                 files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type)}
                 response = requests.post(API_URL, files=files, timeout=10)
                 result = response.json()
@@ -521,6 +528,7 @@ with right:
                 if "error" in result:
                     st.markdown(f'<div class="err-box">⚠ {result["error"]}</div>', unsafe_allow_html=True)
                 else:
+                    # Parse API response fields.
                     predicted_class = result.get("class", "Unknown")
                     confidence = result.get("confidence", None)
                     top_k = result.get("top_k", [])
@@ -551,6 +559,7 @@ with right:
 
                     # ── Top-K breakdown (if API returns it)
                     if top_k:
+                        # Optional Top-K breakdown if provided by the API.
                         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
                         st.markdown('<div class="topk-title">Top predictions</div>', unsafe_allow_html=True)
                         max_score = max([t.get("score", 1) for t in top_k]) or 1

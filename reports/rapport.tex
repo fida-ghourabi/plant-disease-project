@@ -1,0 +1,316 @@
+% Rapport LaTeX - Plant Disease Detection (Tomato)
+% Compile with: pdflatex rapport.tex
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{float}
+\usepackage{longtable}
+
+\geometry{margin=2.5cm}
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue}
+
+\title{Rapport de projet\\Plant Disease Detection (Tomato)}
+\author{\textit{Nom Prenom}}
+\date{19 avril 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport pr\'esente un projet complet de d\'etection des maladies de feuilles de tomate. Il couvre la pr\'eparation du jeu de donn\'ees, un pipeline ML bas\'e sur des features explicites (couleur, texture, forme), l'entra\^inement de mod\`eles profonds (CNN et MobileNetV2), la comparaison objective des performances, puis le d\'eploiement via FastAPI et Streamlit, localement (Docker) et en ligne. Les choix techniques sont explicit\'es et reli\'es aux contraintes de robustesse, d'explicabilit\'e et de facilit\'e de d\'eploiement.
+\end{abstract}
+
+\section{Introduction et objectifs}
+L'objectif est de classer des images de feuilles de tomate en 8 classes (7 maladies + sain) avec un syst\`eme complet de bout en bout. Le projet vise :
+\begin{itemize}[leftmargin=*]
+    \item une cha\^ine ML explicable (features couleurs/texture/forme) ;
+    \item une cha\^ine DL moderne (CNN et transfert MobileNetV2) ;
+    \item une \`evaluation rigoureuse (F1 macro) ;
+    \item un d\'eploiement exploitable (API + application web).
+\end{itemize}
+
+\textbf{Contrainte principale :} obtenir de bonnes performances en gardant une cha\^ine compr\'ehensible et d\'eployable rapidement. Cela justifie l'approche comparative ML vs DL.
+
+\textbf{Port\'ee :} le rapport documente l'ensemble du cycle de vie : collecte/filtrage des donn\'ees, choix d'architecture ML/DL, entra\^inement, comparaison, d\'eploiement local (Docker) et en ligne.
+
+\section{Jeu de donn\'ees}
+Le dataset provient de \textit{PlantVillage} et est r\'eduit aux classes tomate via un script d'extraction. Les classes retenues sont :
+\begin{itemize}[leftmargin=*]
+    \item Tomato\_Bacterial\_spot
+    \item Tomato\_Early\_blight
+    \item Tomato\_Late\_blight
+    \item Tomato\_Leaf\_Mold
+    \item Tomato\_Septoria\_leaf\_spot
+    \item Tomato\_Spider\_mites\_Two\_spotted\_spider\_mite
+    \item Tomato\_\_Target\_Spot
+    \item Tomato\_healthy
+\end{itemize}
+
+\textbf{Choix :} se limiter aux classes tomate permet de concentrer l'apprentissage sur un usage agronomique r\'eel et d'optimiser le pipeline sur un nombre de classes g\'erable.
+
+\textbf{R\'epartition et split :} un split stratifi\'e 80/20 est utilis\'e pour le ML. Le DL utilise le m\^eme ratio via \texttt{image\_dataset\_from\_directory}. La m\'etrique F1 macro est choisie pour traiter l'\'eventuel d\'es\'equilibre entre classes.
+
+\textbf{Distribution (extrait du set de test)} : la table ci-dessous r\'esume le nombre d'images par classe (jeu de test ML). Cette vue met en \'evidence les diff\'erences de volume entre classes.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lc}
+\toprule
+Classe & Nombre d'images (test) \\
+\midrule
+Tomato\_Bacterial\_spot & 426 \\
+Tomato\_Early\_blight & 200 \\
+Tomato\_Late\_blight & 382 \\
+Tomato\_Leaf\_Mold & 190 \\
+Tomato\_Septoria\_leaf\_spot & 354 \\
+Tomato\_Spider\_mites\_Two\_spotted\_spider\_mite & 335 \\
+Tomato\_\_Target\_Spot & 281 \\
+Tomato\_healthy & 318 \\
+\bottomrule
+\end{tabular}
+\caption{R\'epartition des classes sur le jeu de test (extrait des rapports ML).}
+\end{table}
+
+\section{Architecture globale}
+Le projet est structur\'e en modules clairs : pr\'eparation, extraction de features, entra\^inement, \`evaluation, puis inf\'erence et d\'eploiement.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    node distance=18mm,
+    box/.style={draw, rounded corners, minimum height=9mm, minimum width=28mm, align=center},
+    arr/.style={-Latex}
+]
+\node[box] (data) {Dataset\newline PlantVillage};
+\node[box, right=of data] (prep) {Preprocess\newline Resize + Blur};
+\node[box, right=of prep] (seg) {Segmentation\newline HSV};
+\node[box, right=of seg] (feat) {Features\newline HSV+GLCM+Shape};
+\node[box, right=of feat] (ml) {Models ML\newline RF/SVM/KNN};
+\draw[arr] (data) -- (prep);
+\draw[arr] (prep) -- (seg);
+\draw[arr] (seg) -- (feat);
+\draw[arr] (feat) -- (ml);
+\end{tikzpicture}
+\caption{Pipeline ML bas\'e sur segmentation et features.}
+\end{figure}
+
+\section{Pipeline de pr\'etraitement}
+Le pipeline ML repose sur un pr\'etraitement simple et robuste :
+\begin{itemize}[leftmargin=*]
+    \item redimensionnement : $128\times128$ pour le ML ;
+    \item flou gaussien pour r\'eduire le bruit ;
+    \item segmentation couleur en HSV pour isoler la feuille.
+\end{itemize}
+
+\textbf{Choix :} la segmentation HSV exploite la dominante verte des feuilles. Ce choix limite l'influence du fond et rend les features plus stables. Le redimensionnement fixe homog\'en\'eise la taille des entr\'ees et acc\'el\`ere le calcul des descripteurs.
+
+\textbf{D\'etail op\'erationnel :} le flou gaussien (k=5) diminue le bruit haute fr\'equence, ce qui stabilise \`a la fois le masque HSV et les descripteurs de texture.
+
+\section{Extraction de caract\'eristiques (ML)}
+Trois familles de descripteurs sont combin\'ees :
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Couleur} : histogrammes HSV (16 bins) ;
+    \item \textbf{Texture} : GLCM (contrast, correlation, energy, homogeneity) ;
+    \item \textbf{Forme} : aire, p\'erim\`etre, circularit\'e (sur masque).
+\end{itemize}
+
+\textbf{Choix :} ces features sont classiques, rapides \`a calculer et interpr\'etables. Elles capturent des sympt\^omes visuels (taches, d\'eformations, texture) sans besoin d'un r\'eseau profond.
+
+\textbf{Justification :} les maladies foliaires se traduisent souvent par des variations de teinte (jaunissement, brunissement), des motifs de texture (n\'ecroses, points) et des modifications de forme. Ce trio de features est donc coh\'erent avec le domaine.
+
+\textbf{Impact :} cette repr\'esentation explicite aide \`a interpr\'eter les erreurs. Par exemple, des classes visuellement proches peuvent avoir des histogrammes HSV similaires, d'o\`u des confusions cibl\'ees dans la matrice de confusion.
+
+\section{Mod\`eles ML entra\^in\'es}
+Trois mod\`eles sont test\'es :
+\begin{itemize}[leftmargin=*]
+    \item Random Forest (200 arbres, pond\'eration des classes) ;
+    \item SVM RBF avec standardisation ;
+    \item k-NN (k=5) avec standardisation.
+\end{itemize}
+
+\textbf{Choix :} la Random Forest est robuste et performante sur des features h\'et\'erog\`enes ; le SVM g\`ere bien des fronti\`eres complexes ; le k-NN sert de baseline intuitive. Les classes d\'es\'equilibr\'ees sont compens\'ees par des \textit{class weights}.
+
+\textbf{Protocole :} apprentissage sur 80\% des donn\'ees, test sur 20\% en stratifi\'e. La performance est mesur\'ee en F1 macro, et les matrices de confusion sont g\'en\'er\'ees pour analyser les confusions entre maladies proches.
+
+\textbf{Pourquoi ces mod\`eles ?} Ces trois mod\`eles repr\'esentent des familles diff\'erentes : ensembles d'arbres (RF), marges maximales (SVM), voisins proches (k-NN). Leur comparaison donne une vision robuste des performances du pipeline de features.
+
+\section{Mod\`eles DL entra\^in\'es}
+Deux approches sont test\'ees :
+\begin{itemize}[leftmargin=*]
+    \item CNN simple (3 blocs conv + GAP) ;
+    \item Transfert MobileNetV2 pr\'e-entrain\'e (ImageNet), avec augmentation.
+\end{itemize}
+
+\textbf{Choix :} le CNN sert de baseline adapt\'ee au dataset ; MobileNetV2 est l\'eger, efficace et adapt\'e au d\'eploiement.
+
+\textbf{D\'etails :} les images sont redimensionn\'ees en $224\times224$. Une augmentation simple (flip, rotation, zoom) est utilis\'ee pour am\'eliorer la g\'en\'eralisation. Les poids de classes sont calcul\'es pour r\'eduire l'impact du d\'es\'equilibre.
+
+\textbf{Justification du transfert :} MobileNetV2, pr\'e-entrain\'e sur ImageNet, transf\`ere des caract\'eristiques visuelles g\'en\'erales (bords, textures) utiles pour la classification de feuilles, tout en gardant un mod\`ele l\'eger pour le d\'eploiement.
+
+\section{\'Evaluation et m\'etriques}
+Les performances sont mesur\'ees sur une validation hold-out (20\%). La m\'etrique principale est le F1 macro, plus \`a m\^eme de refl\'eter la qualit\'e multi-classes en cas de d\'es\'equilibre.
+
+\textbf{Pourquoi F1 macro ?} L'accuracy peut masquer de mauvaises performances sur des classes minoritaires. Le F1 macro moyenne le F1 par classe et r\'ecompense une performance homog\`ene.
+
+\subsection*{R\'esultats ML}
+Le meilleur mod\`ele ML est la Random Forest.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lccc}
+\toprule
+Mod\`ele & F1 macro (train) & F1 macro (test) & Accuracy (test) \\
+\midrule
+Random Forest & 1.000 & 0.951 & 0.95 \\
+SVM RBF & 0.964 & 0.947 & 0.95 \\
+KNN & 0.952 & 0.929 & 0.93 \\
+\bottomrule
+\end{tabular}
+\caption{Synth\`ese des performances ML (extrait des rapports).}
+\end{table}
+
+\subsection*{R\'esultats DL}
+Le meilleur mod\`ele DL est MobileNetV2.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Mod\`ele & F1 macro (val) & Accuracy (val) \\
+\midrule
+MobileNetV2 & 0.866 & 0.877 \\
+CNN & 0.849 & 0.854 \\
+\bottomrule
+\end{tabular}
+\caption{Synth\`ese des performances DL (validation).}
+\end{table}
+
+\section{Comparaison ML vs DL}
+Le script de comparaison d\'esigne un vainqueur global :
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Meilleur global : ML (Random Forest)}
+    \item \textbf{F1 macro ML :} 0.951
+    \item \textbf{F1 macro DL :} 0.866
+\end{itemize}
+
+\textbf{Analyse :} sur ce dataset, les features de couleur/texture sont tr\`es discriminantes. Le ML atteint un meilleur F1 macro, probablement gr\^ace \`a un bon alignement entre sympt\^omes visuels et descripteurs explicites.
+
+\textbf{Interpr\'etation :} l'\'ecart sugg\`ere que le DL n'a pas encore atteint son plein potentiel sans fine-tuning avanc\'e ni augmentation agressive. Pour un d\'eploiement rapide, le ML est donc retenu.
+
+\textbf{Discussion :} l'approche ML est moins gourmande en ressources et plus simple \`a expliquer. En contexte industriel ou agricole, cette transparence facilite l'adoption (expliquer \textit{pourquoi} une classe est pr\'edite).
+
+\section{Analyse des erreurs}
+Les matrices de confusion mettent en \`evidence des confusions principalement entre classes avec des sympt\^omes visuels proches (ex. \textit{Early blight} vs \textit{Late blight}). Ces erreurs sont coh\'erentes avec le recouvrement partiel des motifs de texture et de couleur.
+
+\textbf{Pistes :} l'ajout d'images terrain, un meilleur \`eclairage uniforme lors de la collecte, et des augmentations cibl\'ees (contraste, luminosit\'e) peuvent r\'eduire ces confusions.
+
+\section{D\'eploiement}
+Deux composants sont fournis :
+\begin{itemize}[leftmargin=*]
+    \item \textbf{API FastAPI} : endpoint \texttt{/predict} pour classer une image ;
+    \item \textbf{Application Streamlit} : interface de d\'emonstration pour l'utilisateur final.
+\end{itemize}
+
+\subsection*{Docker (local)}
+Le projet est conteneuris\'e avec Docker Compose (services \texttt{api} et \texttt{app}). Les ports sont expos\'es en local (8000 et 8501), ce qui facilite l'ex\'ecution sur une machine de d\'eveloppement.
+
+\textbf{Choix :} Docker garantit la reproductibilit\'e (m\^emes d\'ependances et m\^eme environnement) et simplifie les d\'emonstrations.
+
+\subsection*{H\'ebergement (Render)}
+Le projet est d\'eploy\'e en ligne :
+\begin{itemize}[leftmargin=*]
+    \item Streamlit : \url{https://streamlit-1-z0qp.onrender.com/}
+    \item API FastAPI : \url{https://plant-api-g8ab.onrender.com/}
+\end{itemize}
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    node distance=16mm,
+    box/.style={draw, rounded corners, minimum height=9mm, minimum width=26mm, align=center},
+    arr/.style={-Latex}
+]
+\node[box] (user) {Utilisateur};
+\node[box, right=of user] (app) {Streamlit};
+\node[box, right=of app] (api) {FastAPI};
+\node[box, right=of api] (model) {Mod\`ele ML};
+\node[box, below=of api] (resp) {Pr\'ediction};
+\draw[arr] (user) -- (app);
+\draw[arr] (app) -- (api);
+\draw[arr] (api) -- (model);
+\draw[arr] (model) -- (resp);
+\draw[arr] (resp) -| (app);
+\end{tikzpicture}
+\caption{Architecture de d\'eploiement (app web + API).}
+\end{figure}
+
+\section{Choix cl\'es et justification}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{F1 macro} : plus pertinent que l'accuracy en pr\'esence de classes d\'es\'equilibr\'ees.
+    \item \textbf{HSV + GLCM} : combine couleur et texture, cruciaux pour la d\'etection de sympt\^omes.
+    \item \textbf{MobileNetV2} : compromis performance / taille / d\'eploiement.
+    \item \textbf{Double pipeline ML/DL} : comparaison objective et choix du meilleur pour la production.
+    \item \textbf{Docker + Render} : facilite la reproductibilit\'e et l'acc\`es pour les d\'emonstrations.
+\end{itemize}
+
+\section{Organisation du code}
+La structure du projet est orient\'ee pipeline :
+\begin{itemize}[leftmargin=*]
+    \item \textbf{src/} : pr\'etraitement, segmentation, extraction, entra\^inement, comparaison ;
+    \item \textbf{api/} : service FastAPI ;
+    \item \textbf{app/} : application Streamlit ;
+    \item \textbf{models/} et \textbf{outputs/} : mod\`eles et rapports.
+\end{itemize}
+
+\section{API : contrat et usage}
+L'API expose un endpoint \texttt{/predict} recevant une image. La r\'eponse est un JSON :
+\begin{itemize}[leftmargin=*]
+    \item \texttt{class} : classe pr\'edite ;
+    \item \texttt{confidence} : non fournie (\`a enrichir) ;
+    \item \texttt{model} : type de mod\`ele (ML).
+\end{itemize}
+
+\section{Reproductibilit\'e}
+Une graine al\'eatoire globale est fix\'ee (SEED=42) pour garantir la reproductibilit\'e. Les dossiers de sorties (mod\`eles, m\'etriques, logs) sont cr\'e\'es automatiquement. Cela permet de comparer des exp\'eriences de mani\`ere stable.
+
+\section{Limites}
+\begin{itemize}[leftmargin=*]
+    \item Les performances DL restent en dessous du ML sans fine-tuning avanc\'e.
+    \item Les images de PlantVillage sont homog\`enes (fond neutre), ce qui peut limiter la g\'en\'eralisation au terrain.
+    \item Le pipeline ML d\'epend d'une segmentation HSV qui peut \^etre sensible \`a l'\'eclairage r\'eel.
+\end{itemize}
+
+\section{Am\'eliorations possibles}
+\begin{itemize}[leftmargin=*]
+    \item Fine-tuning complet de MobileNetV2 et data augmentation plus pouss\'ee.
+    \item Ajout d'un jeu de donn\'ees terrain pour tester la robustesse.
+    \item Pr\'ediction avec estimation de confiance et top-K classes.
+    \item M\'ecanismes de monitoring en production (logs, drift, feedback utilisateurs).
+    \item Int\'egration d'images r\'eelles prises au champ pour renforcer la g\'en\'eralisation.
+\end{itemize}
+
+\section{Conclusion}
+Le projet d\'elivre un syst\`eme complet de d\'etection de maladies de la tomate. Le pipeline ML, bas\'e sur des features explicites, surpasse les mod\`eles DL test\'es sur ce dataset, ce qui justifie son choix pour la production. Le d\'eploiement (API + app) rend le mod\`ele accessible et utilisable dans un contexte r\'eel.
+
+\section*{Annexe A : commandes essentielles}
+\begin{itemize}[leftmargin=*]
+    \item Extraction des classes : \texttt{python data/extractor.py}
+    \item Entra\^inement ML : \texttt{python -m src.train\_ml}
+    \item Entra\^inement DL : \texttt{python -m src.train\_dl}
+    \item Lancement API : \texttt{uvicorn api.main:app --reload}
+    \item Lancement app : \texttt{streamlit run app/streamlit\_app.py}
+    \item Docker : \texttt{docker compose up --build}
+\end{itemize}
+
+\end{document}

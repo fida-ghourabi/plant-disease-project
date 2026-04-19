@@ -1,3 +1,5 @@
+"""Compare ML vs DL reports and copy the best model artifact."""
+
 import os
 import re
 import shutil
@@ -9,6 +11,7 @@ OUT_PATH = "outputs/metrics/best_overall.txt"
 
 
 def _extract_ml_best_f1(report_text):
+    # Extract the best ML model name from the report text.
     match = re.search(r"Best model: (\w+)", report_text)
     best_name = match.group(1) if match else "rf"
 
@@ -21,6 +24,7 @@ def _extract_ml_best_f1(report_text):
 
 
 def _extract_dl_best_f1(report_text):
+    # Extract the best DL model name from the report text.
     match = re.search(r"Best DL model: (\w+)", report_text)
     best_name = match.group(1) if match else "mobilenetv2"
 
@@ -32,6 +36,8 @@ def _extract_dl_best_f1(report_text):
 
 
 def compare_and_save():
+    # Read metric reports for ML and DL, then select the best by F1 macro.
+    # The reports are created by src.train_ml and src.train_dl.
     with open(ML_REPORT, "r", encoding="utf-8") as f:
         ml_text = f.read()
     with open(DL_REPORT, "r", encoding="utf-8") as f:
@@ -43,6 +49,8 @@ def compare_and_save():
     if ml_f1 is None or dl_f1 is None:
         raise ValueError("Could not parse F1 scores from reports.")
 
+    # Copy the winning model to a standard filename for inference.
+    # Copy the winning model to a standard filename for inference.
     if ml_f1 >= dl_f1:
         winner = "ml"
         winner_name = ml_name
@@ -58,6 +66,7 @@ def compare_and_save():
         src_model = os.path.join(MODELS_DIR, "dl", "best_dl.keras")
         dst_model = os.path.join(MODELS_DIR, "best_overall.keras")
 
+    # Write a small summary to outputs/metrics for traceability.
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         f.write(f"Best overall: {winner} ({winner_name})\n")
@@ -65,6 +74,7 @@ def compare_and_save():
         f.write(f"ML best F1: {ml_f1}\n")
         f.write(f"DL best F1: {dl_f1}\n")
 
+    # Copy the model artifact if it exists (best_overall.*).
     if os.path.exists(src_model):
         shutil.copy2(src_model, dst_model)
 

@@ -1,10 +1,13 @@
+"""Project-wide configuration: paths, image sizes, and reproducibility."""
+
 import os
 import random
 import numpy as np
 
-# Global seed for reproducibility
+# Global seed for reproducibility across ML/DL pipelines.
 SEED = 42
 
+# Root folders and output paths.
 DATA_ROOT = "data/dataset_tomato"
 OUTPUTS_DIR = "outputs"
 MODELS_DIR = "models"
@@ -12,10 +15,11 @@ FIGURES_DIR = os.path.join(OUTPUTS_DIR, "figures")
 METRICS_DIR = os.path.join(OUTPUTS_DIR, "metrics")
 LOGS_DIR = os.path.join(OUTPUTS_DIR, "logs")
 
-# Image sizes for ML (features) and DL (CNN)
+# Image sizes for ML (features) and DL (CNN).
 IMG_SIZE_ML = (128, 128)
 IMG_SIZE_DL = (224, 224)
 
+# Ordered list of tomato classes used across the project.
 TOMATO_CLASSES = [
     "Tomato_Bacterial_spot",
     "Tomato_Early_blight",
@@ -28,12 +32,12 @@ TOMATO_CLASSES = [
 ]
 
 def set_seed(seed=SEED):
-    # Ensure repeatable experiments
+    # Ensure repeatable experiments for numpy and python random.
     random.seed(seed)
     np.random.seed(seed)
 
 def ensure_dirs():
-    # Create output folders if missing
+    # Create output folders if missing.
     os.makedirs(OUTPUTS_DIR, exist_ok=True)
     os.makedirs(FIGURES_DIR, exist_ok=True)
     os.makedirs(METRICS_DIR, exist_ok=True)

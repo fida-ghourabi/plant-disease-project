@@ -1,3 +1,5 @@
+"""Train CNN and MobileNetV2 models and write DL metrics."""
+
 import os
 import numpy as np
 import tensorflow as tf
@@ -6,9 +8,10 @@ from sklearn.metrics import classification_report, confusion_matrix, f1_score, a
 from .config import DATA_ROOT, IMG_SIZE_DL, MODELS_DIR, METRICS_DIR, SEED, ensure_dirs
 
 def build_cnn(num_classes):
-    # Simple CNN baseline
+    # Simple CNN baseline for quick DL comparison.
     return models.Sequential([
         layers.Rescaling(1.0 / 255),
+        # Lightweight conv stack to learn leaf texture patterns.
         layers.Conv2D(32, 3, activation="relu"),
         layers.MaxPooling2D(),
         layers.Conv2D(64, 3, activation="relu"),
@@ -21,10 +24,11 @@ def build_cnn(num_classes):
     ])
 
 def train_dl(epochs=10, batch_size=16):
-    # Train CNN baseline + Transfer Learning (simple baseline)
+    # Train CNN baseline + Transfer Learning (simple baseline).
     ensure_dirs()
     tf.keras.utils.set_random_seed(SEED)
 
+    # Build training/validation datasets from the folder structure.
     train_ds = tf.keras.utils.image_dataset_from_directory(
         DATA_ROOT,
         validation_split=0.2,
@@ -45,7 +49,7 @@ def train_dl(epochs=10, batch_size=16):
 
     class_names = train_ds.class_names
 
-    # Compute class weights from training set to mitigate imbalance
+    # Compute class weights from training set to mitigate imbalance.
     class_counts = np.zeros(len(class_names), dtype=np.int64)
     for _, batch_y in train_ds:
         for label in batch_y.numpy():
@@ -53,12 +57,14 @@ def train_dl(epochs=10, batch_size=16):
     total = class_counts.sum()
     class_weight = {i: total / (len(class_names) * count) for i, count in enumerate(class_counts)}
 
+    # Light augmentation to reduce overfitting.
     data_augmentation = tf.keras.Sequential([
         layers.RandomFlip("horizontal"),
         layers.RandomRotation(0.1),
         layers.RandomZoom(0.1)
     ])
 
+    # Frozen ImageNet backbone for transfer learning.
     base = tf.keras.applications.MobileNetV2(
         input_shape=IMG_SIZE_DL + (3,),
         include_top=False,
@@ -81,6 +87,7 @@ def train_dl(epochs=10, batch_size=16):
         metrics=["accuracy"]
     )
 
+    # Train transfer-learning model.
     tl_model.fit(
         train_ds,
         validation_data=val_ds,
@@ -88,6 +95,7 @@ def train_dl(epochs=10, batch_size=16):
         class_weight=class_weight
     )
 
+    # Train a small custom CNN for comparison.
     cnn = build_cnn(len(class_names))
     cnn.compile(
         optimizer="adam",
@@ -102,6 +110,7 @@ def train_dl(epochs=10, batch_size=16):
     )
 
     def evaluate_model(model, ds):
+        # Run inference on the dataset and compute standard metrics.
         y_true = []
         y_pred = []
         for batch_x, batch_y in ds:
@@ -116,6 +125,7 @@ def train_dl(epochs=10, batch_size=16):
         return acc, f1, report, cm
 
     per_model_reports = {}
+    # Evaluate both DL models on the validation set.
     for name, model in {"mobilenetv2": tl_model, "cnn": cnn}.items():
         acc, f1, report, cm = evaluate_model(model, val_ds)
         per_model_reports[name] = {"acc": acc, "f1_macro": f1, "report": report, "cm": cm}
@@ -131,6 +141,7 @@ def train_dl(epochs=10, batch_size=16):
 
     os.makedirs(os.path.join(MODELS_DIR, "dl"), exist_ok=True)
     os.makedirs(METRICS_DIR, exist_ok=True)
+    # Save DL model artifacts and metrics.
     tl_model.save(os.path.join(MODELS_DIR, "dl", "mobilenetv2_tomato.keras"))
     cnn.save(os.path.join(MODELS_DIR, "dl", "cnn_tomato.keras"))
 

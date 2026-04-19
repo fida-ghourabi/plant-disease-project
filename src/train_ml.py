@@ -1,3 +1,5 @@
+"""Train classical ML models and persist the best model/report."""
+
 import os
 import joblib
 import numpy as np
@@ -13,7 +15,7 @@ from .build_dataset import build_ml_dataset
 from .config import MODELS_DIR, METRICS_DIR, SEED, ensure_dirs
 
 def train():
-    # Train and select the best classical ML model
+    # Train and select the best classical ML model.
     ensure_dirs()
     X, y, classes = build_ml_dataset()
 
@@ -21,6 +23,7 @@ def train():
         X, y, test_size=0.2, stratify=y, random_state=SEED
     )
 
+    # Balance classes to reduce bias from class imbalance.
     classes_arr = np.array(sorted(set(y_train)))
     class_weights = compute_class_weight(
         class_weight="balanced",
@@ -29,6 +32,7 @@ def train():
     )
     class_weight_dict = {cls: weight for cls, weight in zip(classes_arr, class_weights)}
 
+    # Candidate classical ML models to compare.
     models = {
         "rf": RandomForestClassifier(
             n_estimators=200,
@@ -42,9 +46,11 @@ def train():
         "knn": Pipeline([("scaler", StandardScaler()), ("clf", KNeighborsClassifier(n_neighbors=5))]),
     }
 
+    # Track the best model using macro F1 on the test split.
     best_name, best_model, best_f1 = None, None, -1
     per_model_reports = {}
 
+    # Train/evaluate each candidate model.
     for name, model in models.items():
         model.fit(X_train, y_train)
         pred_train = model.predict(X_train)
@@ -52,6 +58,7 @@ def train():
 
         f1_train = f1_score(y_train, pred_train, average="macro")
         f1_test = f1_score(y_test, pred_test, average="macro")
+        # Per-class report and confusion matrix for diagnostics.
         report = classification_report(y_test, pred_test, target_names=classes)
         cm = confusion_matrix(y_test, pred_test)
         per_model_reports[name] = {
@@ -67,6 +74,7 @@ def train():
         print(report)
         print(cm)
 
+        # Keep the best model based on macro F1.
         if f1_test > best_f1:
             best_f1 = f1_test
             best_name = name
@@ -83,6 +91,7 @@ def train():
     os.makedirs(MODELS_DIR, exist_ok=True)
     os.makedirs(METRICS_DIR, exist_ok=True)
 
+    # Persist the best model and evaluation report to disk.
     joblib.dump({"model": best_model, "classes": classes}, os.path.join(MODELS_DIR, "best_ml.joblib"))
     with open(os.path.join(METRICS_DIR, "ml_report.txt"), "w", encoding="utf-8") as f:
         f.write("Class weights (balanced): " + str(class_weight_dict) + "\n\n")
