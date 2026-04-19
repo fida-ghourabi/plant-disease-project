@@ -425,7 +425,8 @@ footer { display: none !important; }
 """, unsafe_allow_html=True)
 
 # ─── CONFIG ───────────────────────────────────────────────
-API_URL = "http://api:8000/predict"
+# API_URL = "http://api:8000/predict"
+API_URL = "https://plant-api-g8ab.onrender.com/predict"
 
 # ─── TOPBAR ───────────────────────────────────────────────
 st.markdown("""
