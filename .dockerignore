@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual envs
+venv/
+.venv/
+
+# Data and artifacts
+/data/
+outputs/
+
+# Notebooks outputs
+.ipynb_checkpoints/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store

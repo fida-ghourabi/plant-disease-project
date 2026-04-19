@@ -4,3 +4,8 @@ streamlit
 tensorflow
 pillow
 numpy
+joblib
+scikit-learn
+opencv-python
+scikit-image
+python-multipart
